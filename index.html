@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ATM GROUP Attendance</title>
+<style>
+:root{--bg:#0f1115;--panel:#171b22;--panel2:#202631;--text:#f4f7fb;--muted:#9aa6b5;--blue:#2563eb;--orange:#f97316;--green:#16a34a;--red:#dc2626;--border:#2b3442}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,Arial;background:linear-gradient(135deg,#0b0d11,#111827);color:var(--text);min-height:100vh}.app{max-width:1400px;margin:auto;padding:20px}.top{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:20px}.brand{font-size:22px;font-weight:800}.brand span{color:var(--orange)}.sub{color:var(--muted);font-size:13px}.toolbar{display:flex;gap:10px;flex-wrap:wrap}.card{background:rgba(23,27,34,.94);border:1px solid var(--border);border-radius:16px;padding:18px;box-shadow:0 12px 30px #0004}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}.stat b{font-size:30px}.stat small{display:block;color:var(--muted);margin-bottom:5px}.layout{display:grid;grid-template-columns:330px 1fr;gap:16px}.section-title{font-size:15px;font-weight:750;margin:0 0 14px}.field{margin-bottom:12px}.field label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}.field input,.field select{width:100%;background:#0f141b;color:var(--text);border:1px solid var(--border);border-radius:10px;padding:11px;outline:none}.field input:focus,.field select:focus{border-color:var(--blue)}button{border:0;border-radius:10px;padding:10px 14px;font-weight:700;cursor:pointer;color:white;background:var(--blue)}button.secondary{background:#2a313c}button.orange{background:var(--orange)}button.danger{background:var(--red)}button:disabled{opacity:.5;cursor:not-allowed}.actions{display:flex;gap:8px;flex-wrap:wrap}.employee-list{max-height:420px;overflow:auto}.employee{display:flex;justify-content:space-between;align-items:center;padding:10px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;background:#11161d}.employee .name{font-weight:700}.employee .meta{font-size:11px;color:var(--muted)}.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:12px}.table{width:100%;border-collapse:collapse;min-width:700px}.table th,.table td{padding:10px;border-bottom:1px solid var(--border);text-align:center}.table th{font-size:12px;color:var(--muted);background:#11161d;position:sticky;top:0}.table td:first-child,.table th:first-child{text-align:left;position:sticky;left:0;background:#171b22}.status{min-width:48px;padding:7px;border-radius:8px;font-weight:800;cursor:pointer;display:inline-block}.p{background:#14532d;color:#bbf7d0}.a{background:#7f1d1d;color:#fecaca}.na{background:#29313c;color:#aab4c0}.hint{color:var(--muted);font-size:12px;line-height:1.5}.toast{position:fixed;right:18px;bottom:18px;background:#e5e7eb;color:#111;padding:12px 16px;border-radius:10px;display:none;font-weight:700}.empty{padding:30px;text-align:center;color:var(--muted)}@media(max-width:900px){.stats{grid-template-columns:repeat(2,1fr)}.layout{grid-template-columns:1fr}}@media(max-width:520px){.stats{grid-template-columns:1fr}.app{padding:12px}.top{align-items:flex-start;flex-direction:column}}
+</style>
+</head>
+<body>
+<div class="app">
+<header class="top"><div><div class="brand">ATM <span>GROUP</span> Attendance</div><div class="sub">Fast daily attendance management • data stays in this browser</div></div><div class="toolbar"><button class="secondary" id="exportBtn">Export CSV</button><button class="danger" id="resetBtn">Reset Demo Data</button></div></header>
+<section class="stats"><div class="card stat"><small>Employees</small><b id="totalEmployees">0</b></div><div class="card stat"><small>Present Today</small><b id="presentToday">0</b></div><div class="card stat"><small>Absent Today</small><b id="absentToday">0</b></div><div class="card stat"><small>Attendance %</small><b id="attendancePct">0%</b></div></section>
+<div class="layout">
+<aside class="card">
+<h2 class="section-title">Attendance Setup</h2>
+<div class="field"><label>Company</label><select id="company"><option>Saideep</option><option>Pinnacle</option></select></div>
+<div class="field"><label>Date</label><input id="date" type="date"></div>
+<div class="actions"><button id="markAllP">Mark All Present</button><button class="secondary" id="markAllA">Mark All Absent</button></div>
+<hr style="border:0;border-top:1px solid var(--border);margin:18px 0">
+<h2 class="section-title">Add Employee</h2>
+<div class="field"><label>Name</label><input id="empName" placeholder="Employee name"></div>
+<div class="field"><label>Employee ID</label><input id="empId" placeholder="EMP001"></div>
+<div class="field"><label>Gender</label><select id="gender"><option>Male</option><option>Female</option></select></div>
+<div class="actions"><button class="orange" id="addEmployee">Add Employee</button></div>
+<p class="hint">MVP stores data in localStorage. The next step is connecting the same UI to Google Apps Script + Google Sheets.</p>
+<div id="employeeList" class="employee-list"></div>
+</aside>
+<main class="card">
+<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px"><div><h2 class="section-title" style="margin-bottom:4px">Daily Attendance</h2><div class="sub" id="sheetLabel"></div></div><button id="saveBtn">Save Attendance</button></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>Employee</th><th>ID</th><th>Gender</th><th>Status</th><th>Company</th></tr></thead><tbody id="attendanceBody"></tbody></table></div>
+</main>
+</div></div><div class="toast" id="toast"></div>
+<script>
+const KEY='atm_attendance_v1';
+const today=()=>new Date().toISOString().slice(0,10);
+let db=JSON.parse(localStorage.getItem(KEY)||'null')||{employees:[{id:'EMP001',name:'Rahul Patil',gender:'Male',company:'Saideep',active:true},{id:'EMP002',name:'Sneha Jadhav',gender:'Female',company:'Saideep',active:true},{id:'EMP003',name:'Amit Shinde',gender:'Male',company:'Pinnacle',active:true}],attendance:{}};
+const $=id=>document.getElementById(id); $('date').value=today();
+function save(){localStorage.setItem(KEY,JSON.stringify(db));render();}
+function key(){return `${$('company').value}|${$('date').value}`}
+function employees(){return db.employees.filter(e=>e.active&&e.company===$('company').value)}
+function statusFor(id){return db.attendance[key()]?.[id]||'NA'}
+function setStatus(id,s){if(!db.attendance[key()])db.attendance[key()]={};db.attendance[key()][id]=s;renderTable()}
+function render(){renderStats();renderList();renderTable();$('sheetLabel').textContent=`${$('company').value} • ${$('date').value}`}
+function renderStats(){const es=employees(), vals=es.map(e=>statusFor(e.id));const p=vals.filter(x=>x==='P').length,a=vals.filter(x=>x==='A').length; $('totalEmployees').textContent=es.length;$('presentToday').textContent=p;$('absentToday').textContent=a;$('attendancePct').textContent=es.length?Math.round(p/es.length*100)+'%':'0%'}
+function renderList(){$('employeeList').innerHTML=db.employees.map(e=>`<div class="employee"><div><div class="name">${escapeHtml(e.name)}</div><div class="meta">${escapeHtml(e.id)} • ${escapeHtml(e.company)} • ${escapeHtml(e.gender)}</div></div><button class="danger" style="padding:7px 9px" onclick="deactivate('${e.id}')">×</button></div>`).join('')||'<div class="empty">No employees</div>'}
+function renderTable(){const es=employees();$('attendanceBody').innerHTML=es.length?es.map(e=>{const s=statusFor(e.id);return `<tr><td>${escapeHtml(e.name)}</td><td>${escapeHtml(e.id)}</td><td>${escapeHtml(e.gender)}</td><td><span class="status ${s==='P'?'p':s==='A'?'a':'na'}" onclick="cycle('${e.id}')">${s}</span></td><td>${escapeHtml(e.company)}</td></tr>`}).join(''):'<tr><td colspan="5" class="empty">No employees in this company.</td></tr>'}
+function cycle(id){const s=statusFor(id);setStatus(id,s==='NA'?'P':s==='P'?'A':'NA')}
+function deactivate(id){const e=db.employees.find(x=>x.id===id);if(e)e.active=false;save();toast('Employee deactivated')}
+function escapeHtml(v){return String(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
+$('addEmployee').onclick=()=>{const name=$('empName').value.trim(),id=$('empId').value.trim(),gender=$('gender').value,company=$('company').value;if(!name||!id)return toast('Enter name and employee ID');if(db.employees.some(e=>e.id===id))return toast('Employee ID already exists');db.employees.push({id,name,gender,company,active:true});$('empName').value='';$('empId').value='';save();toast('Employee added')};
+$('company').onchange=render;$('date').onchange=render;
+$('markAllP').onclick=()=>{employees().forEach(e=>setStatus(e.id,'P'));save();toast('All marked present')};
+$('markAllA').onclick=()=>{employees().forEach(e=>setStatus(e.id,'A'));save();toast('All marked absent')};
+$('saveBtn').onclick=()=>{save();toast('Attendance saved')};
+$('resetBtn').onclick=()=>{if(confirm('Reset all demo data?')){localStorage.removeItem(KEY);location.reload()}};
+$('exportBtn').onclick=()=>{let rows=[['Date','Company','Employee ID','Name','Gender','Status']];Object.entries(db.attendance).forEach(([k,vals])=>{const [company,date]=k;Object.entries(vals).forEach(([id,s])=>{const e=db.employees.find(x=>x.id===id);if(e)rows.push([date,company,id,e.name,e.gender,s])})});const csv=rows.map(r=>r.map(x=>'"'+String(x).replace(/"/g,'""')+'"').join(',')).join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='attendance.csv';a.click();URL.revokeObjectURL(a.href)};
+function toast(t){$('toast').textContent=t;$('toast').style.display='block';clearTimeout(window.tt);window.tt=setTimeout(()=>$('toast').style.display='none',1800)}
+render();
+</script>
+</body></html>
