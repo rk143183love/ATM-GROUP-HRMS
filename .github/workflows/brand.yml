@@ -1,0 +1,39 @@
+name: Apply ATM branding
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  brand-app:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply logo and Apps Script URL
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('index.html')
+          s = p.read_text(encoding='utf-8')
+
+          s = s.replace('<div class="logo">ATM</div>', '<div class="logo"><img src="logo.svg" alt="ATM GROUPS logo"></div>')
+          s = s.replace('.logo{width:64px;height:64px;', '.logo{width:120px;height:86px;display:flex;align-items:center;justify-content:center;background:#fff;overflow:hidden;')
+          s = s.replace('display:grid;place-items:center;font-weight:900;font-size:22px;margin-bottom:18px}', 'font-weight:900;font-size:22px;margin-bottom:18px}.logo img{width:100%;height:100%;object-fit:contain}')
+
+          api = "const GOOGLE_SCRIPT_URL='https://script.google.com/macros/s/AKfycbzYoCsWFTno4mV4dUEcfC1CpObjQyph1wsoA5N2Uc6WLagGPPfNX90AM7CoX-X9FFRPVw/exec';"
+          helper = r'''\nasync function googleApi(action,payload={}){\n  const r=await fetch(GOOGLE_SCRIPT_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action,...payload})});\n  return await r.json();\n}\n\nconst oldSelectCompany=selectCompany;\nselectCompany=async function(c){\n  selectedCompany=c; $('company').value=c; $('selectedCompanyLabel').textContent=`Company: ${c}`; show('appScreen'); render();\n  try{\n    const d=await googleApi('getAttendance',{company:c,date:$('date').value});\n    if(d.ok && Array.isArray(d.employees)){\n      db.employees=d.employees.map(e=>({id:e.id,name:e.name,gender:e.gender,company:e.company,active:true}));\n      db.attendance[key()]={...(db.attendance[key()]||{}),...(d.statuses||{})};\n      localStorage.setItem(KEY,JSON.stringify(db)); render(); toast('Google Sheet connected');\n    }\n  }catch(e){ toast('Google Sheet connection failed'); }\n};\n\n$('saveBtn').onclick=async()=>{\n  try{\n    await googleApi('saveAttendance',{company:selectedCompany,date:$('date').value,statuses:db.attendance[key()]||{}});\n    persist(); toast('Attendance saved to Google Sheet');\n  }catch(e){ persist(); toast('Saved locally; Sheet connection failed'); }\n};\n\n$('addEmployee').onclick=async()=>{\n  const name=$('empName').value.trim(),gender=$('gender').value;\n  if(!name)return toast('Enter employee name');\n  try{\n    const d=await googleApi('addEmployee',{name,gender,company:selectedCompany,joiningDate:$('date').value,employmentType:'Regular',addedFrom:'Attendance'});\n    if(!d.ok)throw new Error(d.error||'Add failed');\n    $('empName').value='';\n    const a=await googleApi('getAttendance',{company:selectedCompany,date:$('date').value});\n    if(a.ok) db.employees=a.employees.map(e=>({id:e.id,name:e.name,gender:e.gender,company:e.company,active:true}));\n    localStorage.setItem(KEY,JSON.stringify(db)); render(); toast('New employee added to Master');\n  }catch(e){ toast('Could not add employee to Google Sheet'); }\n};\n'''
+
+          s = s.replace('<script>\nconst KEY=', '<script>\n' + api + '\nconst KEY=')
+          s = s.replace('</script></body></html>', helper + '</script></body></html>')
+          p.write_text(s, encoding='utf-8')
+          PY
+      - name: Commit generated branding
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html logo.svg
+          git diff --cached --quiet || git commit -m "Connect attendance app to Google Sheets and add logo"
+          git push
