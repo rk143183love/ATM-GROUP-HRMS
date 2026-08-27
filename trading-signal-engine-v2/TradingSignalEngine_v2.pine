@@ -4,7 +4,6 @@ strategy("Trading Signal Engine V2 - BUY SELL NO TRADE", shorttitle="TSE V2", ov
 // Research/backtesting prototype. Score = rule alignment, NOT win probability.
 // Initial target: XAUUSD 5-minute. Test on other symbols/timeframes before use.
 
-// ── Inputs ───────────────────────────────────────────────────────────────────
 emaFastLen = input.int(20, "EMA Fast", minval=1)
 emaMidLen  = input.int(50, "EMA Mid", minval=1)
 emaSlowLen = input.int(200, "EMA Slow", minval=1)
@@ -26,7 +25,6 @@ maxExtension = input.float(1.8, "Max Distance From EMA20 / ATR", minval=0.5, ste
 useSession   = input.bool(false, "Use Session Filter")
 sessionInput = input.session("0700-2000", "Allowed Session")
 
-// ── Core indicators ──────────────────────────────────────────────────────────
 ema20  = ta.ema(close, emaFastLen)
 ema50  = ta.ema(close, emaMidLen)
 ema200 = ta.ema(close, emaSlowLen)
@@ -36,7 +34,7 @@ atr = ta.atr(atrLen)
 atrMA = ta.sma(atr, 50)
 volMA = ta.sma(volume, volLen)
 
-// Higher-timeframe trend uses the last confirmed HTF bar to reduce repaint risk.
+// Last confirmed higher-timeframe values reduce repainting.
 htfClose = request.security(syminfo.tickerid, htf, close[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
 htfEMA20 = request.security(syminfo.tickerid, htf, ta.ema(close, emaFastLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
 htfEMA50 = request.security(syminfo.tickerid, htf, ta.ema(close, emaMidLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
@@ -46,51 +44,44 @@ htfBear = htfClose < htfEMA20 and htfEMA20 < htfEMA50
 bullTrend = ema20 > ema50 and ema50 > ema200 and close > ema20
 bearTrend = ema20 < ema50 and ema50 < ema200 and close < ema20
 
-// Structure: current close breaks the prior range.
 prevHigh = ta.highest(high, structureLen)[1]
 prevLow  = ta.lowest(low, structureLen)[1]
 bullBreak = close > prevHigh
 bearBreak = close < prevLow
 
-// Swing-style liquidity sweep: take a prior extreme and reclaim it.
 priorSweepLow  = ta.lowest(low, sweepLen)[1]
 priorSweepHigh = ta.highest(high, sweepLen)[1]
 lowSweep  = low < priorSweepLow and close > priorSweepLow
 highSweep = high > priorSweepHigh and close < priorSweepHigh
 
-// Rejection / price action.
-range = math.max(high - low, syminfo.mintick)
+// Price-action rejection.
+candleRange = math.max(high - low, syminfo.mintick)
 lowerWick = math.min(open, close) - low
 upperWick = high - math.max(open, close)
-bullReject = close > open and lowerWick / range >= 0.35
-bearReject = close < open and upperWick / range >= 0.35
+bullReject = close > open and lowerWick / candleRange >= 0.35
+bearReject = close < open and upperWick / candleRange >= 0.35
 
-// Momentum.
 bullRSI  = rsi > 50 and rsi < 72
 bearRSI  = rsi < 50 and rsi > 28
 bullMACD = macdLine > macdSignal and macdHist > 0
 bearMACD = macdLine < macdSignal and macdHist < 0
 
-// Relative volume. Crypto/forex feeds may have tick volume; it is still only a filter.
 volumeAvailable = not na(volume) and not na(volMA)
 relVolume = volumeAvailable ? volume / volMA : na
 bullVolume = not volumeAvailable or relVolume >= 1.05
 bearVolume = not volumeAvailable or relVolume >= 1.05
 
-// S/R proximity.
 recentSupport = ta.lowest(low, zoneLen)[1]
 recentResistance = ta.highest(high, zoneLen)[1]
 nearSupport = low <= recentSupport + atr * 0.40 and close >= open
 nearResistance = high >= recentResistance - atr * 0.40 and close <= open
 
-// Volatility and overextension filters.
 volatilityOK = not na(atrMA) and atr >= atrMA * minAtrRatio
 extension = atr > 0 ? math.abs(close - ema20) / atr : 999.0
 notOverextended = extension <= maxExtension
-
 sessionOK = not useSession or not na(time(timeframe.period, sessionInput))
 
-// ── 100-point score ──────────────────────────────────────────────────────────
+// 100-point score.
 int buyScore = 0
 buyScore += bullTrend ? 20 : 0
 buyScore += htfBull ? 15 : 0
@@ -115,18 +106,17 @@ sellScore += (bearReject or bearBreak) ? 5 : 0
 sellScore += volatilityOK ? 3 : 0
 sellScore += notOverextended ? 2 : 0
 
-// Mandatory filters stop a high score from becoming a weak signal.
 buyCore = bullTrend and htfBull and (bullRSI or bullMACD) and (bullBreak or lowSweep) and volatilityOK and notOverextended and sessionOK
 sellCore = bearTrend and htfBear and (bearRSI or bearMACD) and (bearBreak or highSweep) and volatilityOK and notOverextended and sessionOK
 
 rawBuy = barstate.isconfirmed and buyScore >= minScore and buyCore
 rawSell = barstate.isconfirmed and sellScore >= minScore and sellCore
 
-// Never output both sides. Equal-score conflict = NO TRADE.
+// If both qualify, stronger side wins; equal score becomes NO TRADE.
 buySignal = rawBuy and (not rawSell or buyScore > sellScore)
 sellSignal = rawSell and (not rawBuy or sellScore > buyScore)
 
-// ── Locked entry risk model ──────────────────────────────────────────────────
+// Lock SL/TP at the signal bar so later candles do not move them.
 var float activeSL = na
 var float activeTP = na
 var string activeSide = ""
@@ -154,7 +144,6 @@ if strategy.position_size == 0 and strategy.position_size[1] != 0
     activeTP := na
     activeSide := ""
 
-// ── Visuals ──────────────────────────────────────────────────────────────────
 plot(ema20, "EMA 20", color=color.new(color.blue, 0))
 plot(ema50, "EMA 50", color=color.new(color.orange, 0))
 plot(ema200, "EMA 200", color=color.new(color.purple, 0))
@@ -169,7 +158,6 @@ if buySignal
 if sellSignal
     alert("SELL | Score=" + str.tostring(sellScore) + " | Symbol=" + syminfo.ticker + " | TF=" + timeframe.period, alert.freq_once_per_bar_close)
 
-// ── Dashboard ────────────────────────────────────────────────────────────────
 var table dash = table.new(position.top_right, 2, 13, border_width=1)
 if barstate.islast
     table.cell(dash, 0, 0, "TSE V2", text_color=color.white)
@@ -185,11 +173,11 @@ if barstate.islast
     table.cell(dash, 0, 5, "RSI")
     table.cell(dash, 1, 5, str.tostring(rsi, "#.0"))
     table.cell(dash, 0, 6, "Rel Volume")
-    table.cell(dash, 1, 6, na(relVolume) ? "N/A" : str.tostring(relVolume, "#.00x"))
+    table.cell(dash, 1, 6, na(relVolume) ? "N/A" : str.tostring(relVolume, "#.00") + "x")
     table.cell(dash, 0, 7, "ATR Filter")
     table.cell(dash, 1, 7, volatilityOK ? "OK" : "LOW")
     table.cell(dash, 0, 8, "Extension")
-    table.cell(dash, 1, 8, str.tostring(extension, "#.00x"))
+    table.cell(dash, 1, 8, str.tostring(extension, "#.00") + "x")
     table.cell(dash, 0, 9, "Signal")
     table.cell(dash, 1, 9, buySignal ? "BUY" : sellSignal ? "SELL" : "NO TRADE")
     table.cell(dash, 0, 10, "SL")
