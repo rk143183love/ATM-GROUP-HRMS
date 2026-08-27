@@ -1,13 +1,9 @@
 //@version=6
-strategy("Trading Signal Engine v1 - BUY SELL NO TRADE", shorttitle="TSE v1", overlay=true, pyramiding=0, initial_capital=100000, default_qty_type=strategy.percent_of_equity, default_qty_value=10, commission_type=strategy.commission.percent, commission_value=0.05, process_orders_on_close=true)
+strategy("Trading Signal Engine v1.1 - BUY SELL NO TRADE", shorttitle="TSE v1.1", overlay=true, pyramiding=0, initial_capital=100000, default_qty_type=strategy.percent_of_equity, default_qty_value=10, commission_type=strategy.commission.percent, commission_value=0.05, process_orders_on_close=true)
 
-// Educational/backtesting prototype.
-// The score is a rule-based confidence score, NOT a probability of winning.
-// Designed first for XAUUSD 5-minute testing, but inputs are configurable.
+// Educational/backtesting prototype. Rule-based score is NOT win probability.
+// First target: XAUUSD 5-minute testing. Inputs remain configurable.
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Inputs
-// ─────────────────────────────────────────────────────────────────────────────
 emaFastLen   = input.int(20, "EMA Fast", minval=1)
 emaMidLen    = input.int(50, "EMA Mid", minval=1)
 emaSlowLen   = input.int(200, "EMA Slow", minval=1)
@@ -25,60 +21,46 @@ minScore     = input.int(80, "Minimum Signal Score", minval=50, maxval=100)
 useVolume    = input.bool(true, "Use Volume Confirmation")
 useLiquidity = input.bool(true, "Use Liquidity Sweep Confirmation")
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Core calculations
-// ─────────────────────────────────────────────────────────────────────────────
 ema20  = ta.ema(close, emaFastLen)
 ema50  = ta.ema(close, emaMidLen)
 ema200 = ta.ema(close, emaSlowLen)
 rsi    = ta.rsi(close, rsiLen)
 [macdLine, macdSig, macdHist] = ta.macd(close, macdFast, macdSlow, macdSignal)
-atr = ta.atr(atrLen)
-volMA = ta.sma(volume, volLen)
+atr    = ta.atr(atrLen)
+volMA  = ta.sma(volume, volLen)
 
-// Trend: 20/50/200 alignment.
 bullTrend = ema20 > ema50 and ema50 > ema200 and close > ema20
 bearTrend = ema20 < ema50 and ema50 < ema200 and close < ema20
 
-// Market structure: confirmed breakout of the previous lookback range.
 prevStructureHigh = ta.highest(high, structureLen)[1]
 prevStructureLow  = ta.lowest(low, structureLen)[1]
 bullStructure = close > prevStructureHigh
 bearStructure = close < prevStructureLow
 
-// Momentum.
-bullRSI = rsi > 50 and rsi < 75
-bearRSI = rsi < 50 and rsi > 25
+bullRSI  = rsi > 50 and rsi < 75
+bearRSI  = rsi < 50 and rsi > 25
 bullMACD = macdLine > macdSig and macdHist > 0
 bearMACD = macdLine < macdSig and macdHist < 0
 
-// Volume confirmation. If volume is unavailable, this component is neutral.
 volumeAvailable = not na(volume) and not na(volMA)
 bullVolume = not useVolume or not volumeAvailable or volume > volMA
 bearVolume = not useVolume or not volumeAvailable or volume > volMA
 
-// Support/resistance proximity and rejection.
-recentSupport = ta.lowest(low, zoneLen)[1]
+recentSupport    = ta.lowest(low, zoneLen)[1]
 recentResistance = ta.highest(high, zoneLen)[1]
-nearSupport = low <= recentSupport + atr * 0.35 and close > open
-nearResistance = high >= recentResistance - atr * 0.35 and close < open
+nearSupport     = low <= recentSupport + atr * 0.35 and close > open
+nearResistance  = high >= recentResistance - atr * 0.35 and close < open
 
-// Liquidity-style sweep: price takes prior extreme and closes back through it.
-lowSweep = low < recentSupport and close > recentSupport
+lowSweep  = low < recentSupport and close > recentSupport
 highSweep = high > recentResistance and close < recentResistance
 
-// Breakout/price action confirmation.
 bullBreakout = close > high[1] and close > open
 bearBreakout = close < low[1] and close < open
 
-// Volatility filter: avoid extremely compressed conditions.
 atrMA = ta.sma(atr, 50)
 volatilityOK = not na(atrMA) and atr >= atrMA * 0.70
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 100-point scoring model
-// ─────────────────────────────────────────────────────────────────────────────
-buyScore = 0
+int buyScore = 0
 buyScore += bullTrend ? 20 : 0
 buyScore += bullStructure ? 15 : 0
 buyScore += nearSupport ? 10 : 0
@@ -89,7 +71,7 @@ buyScore += (useLiquidity and lowSweep) ? 10 : 0
 buyScore += bullBreakout ? 10 : 0
 buyScore += volatilityOK ? 5 : 0
 
-sellScore = 0
+int sellScore = 0
 sellScore += bearTrend ? 20 : 0
 sellScore += bearStructure ? 15 : 0
 sellScore += nearResistance ? 10 : 0
@@ -100,41 +82,45 @@ sellScore += (useLiquidity and highSweep) ? 10 : 0
 sellScore += bearBreakout ? 10 : 0
 sellScore += volatilityOK ? 5 : 0
 
-// Core confirmations are mandatory. This prevents a high score from one-sided conditions.
-buyCore = bullTrend and (bullRSI or bullMACD) and (bullStructure or lowSweep or bullBreakout)
+buyCore  = bullTrend and (bullRSI or bullMACD) and (bullStructure or lowSweep or bullBreakout)
 sellCore = bearTrend and (bearRSI or bearMACD) and (bearStructure or highSweep or bearBreakout)
 
-// Only act on closed bars.
-buySignal = barstate.isconfirmed and buyScore >= minScore and buyCore
-sellSignal = barstate.isconfirmed and sellScore >= minScore and sellCore
+rawBuy  = barstate.isconfirmed and buyScore >= minScore and buyCore
+rawSell = barstate.isconfirmed and sellScore >= minScore and sellCore
 
-// Never allow both signals simultaneously.
-buySignal := buySignal and not sellSignal
-sellSignal := sellSignal and not buySignal
+// If both somehow qualify, choose the stronger side; ties become NO TRADE.
+buySignal  = rawBuy and (not rawSell or buyScore > sellScore)
+sellSignal = rawSell and (not rawBuy or sellScore > buyScore)
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Entry + ATR-based SL/TP simulation
-// ─────────────────────────────────────────────────────────────────────────────
-longSL = close - atr * atrSLMult
-longTP = close + (close - longSL) * rr
-shortSL = close + atr * atrSLMult
-shortTP = close - (shortSL - close) * rr
+// Lock SL/TP to the signal bar's ATR/close. They do not move with later candles.
+var float activeSL = na
+var float activeTP = na
+var string activeSide = ""
 
 if buySignal and strategy.position_size <= 0
+    activeSL := close - atr * atrSLMult
+    activeTP := close + (close - activeSL) * rr
+    activeSide := "BUY"
     strategy.entry("BUY", strategy.long, comment="BUY")
 
 if sellSignal and strategy.position_size >= 0
+    activeSL := close + atr * atrSLMult
+    activeTP := close - (activeSL - close) * rr
+    activeSide := "SELL"
     strategy.entry("SELL", strategy.short, comment="SELL")
 
-if strategy.position_size > 0
-    strategy.exit("BUY EXIT", from_entry="BUY", stop=longSL, limit=longTP)
+if strategy.position_size > 0 and activeSide == "BUY"
+    strategy.exit("BUY EXIT", from_entry="BUY", stop=activeSL, limit=activeTP)
 
-if strategy.position_size < 0
-    strategy.exit("SELL EXIT", from_entry="SELL", stop=shortSL, limit=shortTP)
+if strategy.position_size < 0 and activeSide == "SELL"
+    strategy.exit("SELL EXIT", from_entry="SELL", stop=activeSL, limit=activeTP)
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Visuals
-// ─────────────────────────────────────────────────────────────────────────────
+// Clear locked levels after a position is closed.
+if strategy.position_size == 0 and strategy.position_size[1] != 0
+    activeSL := na
+    activeTP := na
+    activeSide := ""
+
 plot(ema20, "EMA 20", color=color.new(color.blue, 0))
 plot(ema50, "EMA 50", color=color.new(color.orange, 0))
 plot(ema200, "EMA 200", color=color.new(color.purple, 0))
@@ -142,16 +128,14 @@ plot(ema200, "EMA 200", color=color.new(color.purple, 0))
 plotshape(buySignal, title="BUY Signal", style=shape.labelup, location=location.belowbar, text="BUY", color=color.new(color.green, 0), textcolor=color.white, size=size.small)
 plotshape(sellSignal, title="SELL Signal", style=shape.labeldown, location=location.abovebar, text="SELL", color=color.new(color.red, 0), textcolor=color.white, size=size.small)
 
-// Alert payloads for TradingView alerts.
 if buySignal
     alert("BUY | Score=" + str.tostring(buyScore) + " | Symbol=" + syminfo.ticker + " | TF=" + timeframe.period, alert.freq_once_per_bar_close)
 if sellSignal
     alert("SELL | Score=" + str.tostring(sellScore) + " | Symbol=" + syminfo.ticker + " | TF=" + timeframe.period, alert.freq_once_per_bar_close)
 
-// Dashboard.
-var table dash = table.new(position.top_right, 2, 8, border_width=1)
+var table dash = table.new(position.top_right, 2, 10, border_width=1)
 if barstate.islast
-    table.cell(dash, 0, 0, "TSE v1", text_color=color.white)
+    table.cell(dash, 0, 0, "TSE v1.1", text_color=color.white)
     table.cell(dash, 1, 0, "XAUUSD 5M Prototype", text_color=color.white)
     table.cell(dash, 0, 1, "BUY Score")
     table.cell(dash, 1, 1, str.tostring(buyScore))
@@ -165,5 +149,9 @@ if barstate.islast
     table.cell(dash, 1, 5, str.tostring(atr, "#.#####"))
     table.cell(dash, 0, 6, "Signal")
     table.cell(dash, 1, 6, buySignal ? "BUY" : sellSignal ? "SELL" : "NO TRADE")
-    table.cell(dash, 0, 7, "Status")
-    table.cell(dash, 1, 7, "BACKTEST ONLY")
+    table.cell(dash, 0, 7, "SL")
+    table.cell(dash, 1, 7, na(activeSL) ? "-" : str.tostring(activeSL, "#.#####"))
+    table.cell(dash, 0, 8, "TP")
+    table.cell(dash, 1, 8, na(activeTP) ? "-" : str.tostring(activeTP, "#.#####"))
+    table.cell(dash, 0, 9, "Status")
+    table.cell(dash, 1, 9, "BACKTEST ONLY")
